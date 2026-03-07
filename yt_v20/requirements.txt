@@ -1,0 +1,48 @@
+# ============================================================
+# YouTube Pipeline Orchestrator v20 — Full Dependency Manifest
+# ============================================================
+# Install everything in one shot:
+#   pip install -r requirements.txt
+#
+# System packages also required (NOT installed by pip):
+#   - ffmpeg  →  https://ffmpeg.org/download.html
+#   - PostgreSQL  →  https://www.postgresql.org/download/
+# ============================================================
+
+
+# ── Web Framework: Flask & its dependencies ──────────────────
+Flask>=3.0.0
+Werkzeug>=3.0.0          # WSGI toolkit — required by Flask
+Jinja2>=3.1.0            # Template engine — required by Flask
+MarkupSafe>=2.1.0        # Safe string escaping — required by Jinja2
+click>=8.1.0             # CLI utilities — required by Flask
+itsdangerous>=2.1.0      # Secure signing — required by Flask
+blinker>=1.7.0           # Signal support — required by Flask
+
+
+# ── PostgreSQL driver & connection pooling ────────────────────
+psycopg2-binary>=2.9.0   # PostgreSQL adapter (binary = no local build needed)
+                         # Provides: psycopg2, psycopg2.extras, psycopg2.pool
+
+
+# ── HTTP client (YouTube API requests) ───────────────────────
+requests>=2.31.0
+certifi>=2024.1.0        # TLS root certificates — required by requests
+charset-normalizer>=3.0  # Encoding detection — required by requests
+idna>=3.6                # Internationalized domain names — required by requests
+urllib3>=2.0.0           # HTTP connection pooling — required by requests
+
+
+# ── YouTube transcript fetching ───────────────────────────────
+youtube-transcript-api>=0.6.2
+
+
+# ── Audio/video downloading ───────────────────────────────────
+# NOTE: ffmpeg must also be installed at the OS level (see above)
+yt-dlp>=2024.1.0
+
+
+# ── MinIO object storage client & its dependencies ───────────
+minio>=7.2.0
+certifi>=2024.1.0        # Already listed above — minio also requires it
+urllib3>=2.0.0           # Already listed above — minio also requires it

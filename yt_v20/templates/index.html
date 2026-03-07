@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>YouTube Pipeline Orchestrator v20</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+<div class="scanlines"></div>
+<div class="grid-bg"></div>
+
+<main class="container">
+
+  <!-- ── Header ── -->
+  <header class="header">
+    <div class="logo-wrap">
+      <svg class="logo-icon" viewBox="0 0 64 64" fill="none">
+        <rect width="64" height="64" rx="14" fill="#FF0000"/>
+        <polygon points="26,18 48,32 26,46" fill="white"/>
+        <rect x="4" y="52" width="56" height="3" rx="1.5" fill="rgba(255,255,255,0.25)"/>
+      </svg>
+      <div>
+        <h1 class="title">Pipeline Orchestrator</h1>
+        <p class="subtitle">YouTube Data Collection &amp; Chunking System · v20</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-dot" id="statusDot" title="Idle"></div>
+    </div>
+  </header>
+
+  <!-- ── Tabs ── -->
+  <nav class="tab-nav">
+    <button class="tab-btn active" id="tab0" onclick="switchPage('config')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      00 · Config
+    </button>
+    <button class="tab-btn" id="tab1" onclick="switchPage('collector')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16"/></svg>
+      01 · Collect Video IDs
+    </button>
+    <button class="tab-btn" id="tab2" onclick="switchPage('chunker')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      02 · Smart Chunker
+    </button>
+  </nav>
+
+
+  <!-- ================================================================ -->
+  <!-- PAGE 0: Config                                                    -->
+  <!-- ================================================================ -->
+  <div id="pageConfig">
+
+    <section class="card">
+      <div class="card-header">
+        <span class="step-num">00</span>
+        <h2>Configuration</h2>
+        <span class="page-hint">Database &amp; pipeline settings — saved automatically</span>
+      </div>
+
+      <!-- DB section -->
+      <div class="config-section-title">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        PostgreSQL Database
+      </div>
+      <div class="form-grid form-grid-3">
+        <div class="field field-wide">
+          <label for="cfg_host">Host</label>
+          <input type="text" id="cfg_host" placeholder="localhost"/>
+        </div>
+        <div class="field field-narrow">
+          <label for="cfg_port">Port</label>
+          <input type="number" id="cfg_port" placeholder="5432"/>
+        </div>
+        <div class="field">
+          <label for="cfg_user">User</label>
+          <input type="text" id="cfg_user" placeholder="postgres"/>
+        </div>
+        <div class="field">
+          <label for="cfg_password">Password</label>
+          <div class="input-with-btn">
+            <input type="password" id="cfg_password" placeholder="••••••••" autocomplete="off"/>
+            <button class="btn-icon" id="cfgPwdToggle" onclick="togglePassword('cfg_password','cfgPwdToggle')" title="Show password" type="button">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="cfg_db">Database Name</label>
+          <input type="text" id="cfg_db" placeholder="youtube_db"/>
+        </div>
+      </div>
+
+      <!-- Chunker section -->
+      <div class="config-section-title" style="margin-top:1.5rem">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Chunker Settings
+      </div>
+      <div class="form-grid form-grid-4">
+        <div class="field">
+          <label for="cfg_chunk_size">Chunk size seconds <span class="field-hint">(seconds)</span></label>
+          <input type="number" id="cfg_chunk_size" placeholder="30" min="1"/>
+        </div>
+        <div class="field">
+          <label for="cfg_langs">Languages <span class="field-hint">(comma-separated)</span></label>
+          <input type="text" id="cfg_langs" placeholder="mk,en"/>
+        </div>
+        <div class="field">
+          <label for="cfg_max_workers">CHUNK DOWNLOAD WORKERS <span class="field-hint">(audio chunks)</span></label>
+          <input type="number" id="cfg_max_workers" placeholder="2" min="1" max="16"/>
+        </div>
+        <div class="field">
+          <label for="cfg_max_video_workers">CONCURRENT VIDEOS <span class="field-hint">(parallel videos)</span></label>
+          <input type="number" id="cfg_max_video_workers" placeholder="3" min="1" max="8"/>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="btn-row" style="margin-top:1.5rem; gap:.75rem; align-items:center; flex-wrap:wrap;">
+        <button class="btn btn-run" id="cfgSaveBtn" onclick="saveConfig()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v12a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Save Config
+        </button>
+        <button class="btn btn-calc" id="cfgTestBtn" onclick="testDbConnection()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Test DB Connection
+        </button>
+        <button class="btn btn-danger" id="cfgResetBtn" onclick="resetConfig()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+          Reset to Defaults
+        </button>
+        <span class="cfg-status" id="cfgStatus"></span>
+      </div>
+    </section>
+
+  </div><!-- /pageConfig -->
+
+
+  <!-- ================================================================ -->
+  <!-- PAGE 1: Collector                                                 -->
+  <!-- ================================================================ -->
+  <div id="pageCollector" class="hidden">
+
+    <section class="card">
+      <div class="card-header">
+        <span class="step-num">01</span>
+        <h2>Collect Video IDs</h2>
+        <span class="page-hint">Fetches &amp; stores video IDs + titles from YouTube API</span>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="api_key">YouTube API Key <span class="req">*</span> <span class="field-hint">(saved locally)</span></label>
+          <input type="password" id="api_key" placeholder="AIzaSy…" autocomplete="off"/>
+        </div>
+        <div class="field">
+          <label for="channel_id">Channel URL <span class="req">*</span></label>
+          <input type="text" id="channel_id" placeholder="https://www.youtube.com/@channel"/>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-run" id="collectorBtn" onclick="runCollector()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16"/></svg>
+          Run Collector
+        </button>
+      </div>
+    </section>
+
+    <!-- Collector output -->
+    <section class="card hidden" id="collectorOutputCard">
+      <div class="card-header">
+        <span class="step-num">OUT</span>
+        <h2>Collector Output</h2>
+        <span class="running-badge" id="collectorBadge">RUNNING</span>
+      </div>
+      <div class="console-wrap" id="collectorLogWrap">
+        <div class="console-bar">
+          <span class="console-dot red"></span><span class="console-dot yellow"></span><span class="console-dot green"></span>
+          <span class="console-title">stdout</span>
+          <div class="console-actions">
+            <button class="btn-console-action" onclick="toggleLog('collectorLogBody','collectorLogToggleBtn')" id="collectorLogToggleBtn">▼ Hide Log</button>
+            <button class="btn-console-action" onclick="copyLog('collectorLog')">⎘ Copy</button>
+          </div>
+        </div>
+        <div id="collectorLogBody">
+          <pre class="console" id="collectorLog"></pre>
+        </div>
+      </div>
+      <div class="result-box hidden" id="collectorResult">
+        <div class="result-row"><span>Channel:</span><strong id="resChannelName">—</strong></div>
+        <div class="result-row"><span>New Videos Inserted:</span><strong id="resInserted">—</strong></div>
+        <div class="result-row"><span>API Items Fetched:</span><strong id="resApiItems">—</strong></div>
+        <div class="ids-wrap hidden" id="idsWrap">
+          <span class="ids-label">New Video IDs:</span>
+          <div class="ids-list" id="idsList"></div>
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:1rem">
+        <button class="btn btn-calc" onclick="resetCollector()">Reset</button>
+        <button class="btn btn-run" onclick="switchPage('chunker')">→ Go to Smart Chunker</button>
+      </div>
+    </section>
+
+  </div><!-- /pageCollector -->
+
+
+  <!-- ================================================================ -->
+  <!-- PAGE 2: Smart Chunker                                             -->
+  <!-- ================================================================ -->
+  <div id="pageChunker" class="hidden">
+
+    <!-- Mode selector -->
+    <section class="card">
+      <div class="card-header">
+        <span class="step-num">02</span>
+        <h2>Smart Chunker</h2>
+        <span class="page-hint">Download transcripts &amp; audio chunks</span>
+      </div>
+
+      <!-- Storage backend selector -->
+      <div class="mode-row" style="margin-bottom:1rem">
+        <label class="radio-card active" id="radioCardLocal" onclick="setStorageMode('local')">
+          <input type="radio" name="storage_mode" value="local" checked/>
+          <div class="radio-label">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <span>Save Locally</span>
+          </div>
+          <p class="radio-desc">Write chunks to a local folder</p>
+        </label>
+        <label class="radio-card" id="radioCardMinio" onclick="setStorageMode('minio')">
+          <input type="radio" name="storage_mode" value="minio"/>
+          <div class="radio-label">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <span>Save to MinIO</span>
+          </div>
+          <p class="radio-desc">Upload chunks to a MinIO bucket</p>
+        </label>
+      </div>
+
+      <!-- Local output folder -->
+      <div id="storageLocal" style="margin-bottom:1.25rem">
+        <div class="field">
+          <label for="chunker_output">Output Folder <span class="req">*</span></label>
+          <input type="text" id="chunker_output" value="./youtubechunks" placeholder="./youtubechunks"/>
+        </div>
+      </div>
+
+      <!-- MinIO connection settings -->
+      <div id="storageMinio" class="hidden" style="margin-bottom:1.25rem">
+        <div class="minio-grid">
+          <div class="field">
+            <label for="minio_endpoint">MinIO Endpoint <span class="req">*</span></label>
+            <input type="text" id="minio_endpoint" value="localhost:9000" placeholder="host:port"/>
+          </div>
+          <div class="field">
+            <label for="minio_bucket">Bucket Name <span class="req">*</span></label>
+            <input type="text" id="minio_bucket" value="youtube-chunks" placeholder="youtube-chunks"/>
+          </div>
+          <div class="field">
+            <label for="minio_access_key">Access Key <span class="req">*</span></label>
+            <input type="text" id="minio_access_key" value="minioadmin" placeholder="minioadmin"/>
+          </div>
+          <div class="field">
+            <label for="minio_secret_key">Secret Key <span class="req">*</span></label>
+            <input type="password" id="minio_secret_key" placeholder="Secret key"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- Global stats -->
+      <div class="global-stats-section">
+        <div class="global-stats-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          All Channels — Database Totals
+        </div>
+        <div class="stat-cards global-stat-cards">
+          <div class="stat-card">
+            <span class="stat-card-value" id="gStatTotal">—</span>
+            <span class="stat-card-label">Total Videos</span>
+          </div>
+          <div class="stat-card stat-card--green">
+            <span class="stat-card-value" id="gStatChunked">—</span>
+            <span class="stat-card-label">Videos Chunked</span>
+          </div>
+          <div class="stat-card stat-card--yellow">
+            <span class="stat-card-value" id="gStatPending">—</span>
+            <span class="stat-card-label">Pending</span>
+          </div>
+          <div class="stat-card stat-card--accent">
+            <span class="stat-card-value" id="gStatTime">—</span>
+            <span class="stat-card-label">⏱ Duration Chunked</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mode radio -->
+      <div class="mode-row">
+        <label class="radio-card active" id="radioCardChannel" onclick="setChunkerMode('channel')">
+          <input type="radio" name="chunker_mode" value="channel" checked/>
+          <div class="radio-label">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            <span>Full Channel</span>
+          </div>
+          <p class="radio-desc">Chunk all videos for a selected channel</p>
+        </label>
+        <label class="radio-card" id="radioCardSelected" onclick="setChunkerMode('selected')">
+          <input type="radio" name="chunker_mode" value="selected"/>
+          <div class="radio-label">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span>Individual Videos</span>
+          </div>
+          <p class="radio-desc">Pick specific videos from a channel</p>
+        </label>
+      </div>
+
+      <!-- Mode A: Full Channel -->
+      <div id="modeChannel" class="mode-panel">
+        <div class="field" style="margin-top:1.25rem">
+          <label for="channelDropdown">Select Channel</label>
+          <select id="channelDropdown" class="styled-select" onchange="onChannelDropdownChange()">
+            <option value="">— loading channels… —</option>
+          </select>
+        </div>
+        <div class="channel-stats hidden" id="channelStats">
+          <div class="stat-cards">
+            <div class="stat-card">
+              <span class="stat-card-value" id="statTotal">0</span>
+              <span class="stat-card-label">Total Videos</span>
+            </div>
+            <div class="stat-card stat-card--green">
+              <span class="stat-card-value" id="statChunked">0</span>
+              <span class="stat-card-label">Videos Chunked</span>
+            </div>
+            <div class="stat-card stat-card--yellow">
+              <span class="stat-card-value" id="statPending">0</span>
+              <span class="stat-card-label">Pending</span>
+            </div>
+            <div class="stat-card stat-card--accent">
+              <span class="stat-card-value" id="statChunkedTime">0h 0m</span>
+              <span class="stat-card-label">⏱ Duration Chunked</span>
+            </div>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:1.25rem">
+          <button class="btn btn-run" id="chunkChannelBtn" onclick="runChunkChannel()" disabled>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Chunk Entire Channel
+          </button>
+        </div>
+      </div>
+
+      <!-- Mode B: Individual Videos -->
+      <div id="modeSelected" class="mode-panel hidden">
+        <div class="field" style="margin-top:1.25rem">
+          <label for="channelDropdownB">Select Channel</label>
+          <select id="channelDropdownB" class="styled-select" onchange="loadVideoTable()">
+            <option value="">— loading channels… —</option>
+          </select>
+        </div>
+
+        <!-- Video picker table -->
+        <div class="video-picker hidden" id="videoPicker">
+          <div class="picker-toolbar">
+            <input type="text" id="videoFilter" placeholder="Filter by title or ID…" oninput="filterPickerVideos()"/>
+            <div class="picker-actions">
+              <button class="btn btn-sm btn-calc" onclick="selectAll()">Select All</button>
+              <button class="btn btn-sm btn-calc" onclick="selectNone()">Deselect All</button>
+              <button class="btn btn-sm btn-calc" onclick="selectUnchecked()">Select Unchunked</button>
+              <span class="sel-count" id="selCount">0 selected</span>
+            </div>
+          </div>
+
+          <div class="video-table-wrap">
+            <table class="video-table">
+              <thead>
+                <tr>
+                  <th style="width:36px"><input type="checkbox" id="masterCheck" onchange="masterToggle(this)"/></th>
+                  <th>Video ID</th>
+                  <th>Title</th>
+                  <th>Published</th>
+                  <th>Duration</th>
+                  <th>Chunked</th>
+                </tr>
+              </thead>
+              <tbody id="pickerTableBody"></tbody>
+            </table>
+            <div class="db-empty hidden" id="pickerEmpty"><p>No videos match your filter.</p></div>
+          </div>
+
+          <div class="btn-row" style="margin-top:1rem">
+            <button class="btn btn-run" id="chunkSelectedBtn" onclick="runChunkSelected()" disabled>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              Chunk Selected Videos
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Chunker live output -->
+    <section class="card hidden" id="chunkerOutputCard">
+      <div class="card-header">
+        <span class="step-num">RUN</span>
+        <h2>Chunker Running</h2>
+        <span class="running-badge" id="chunkerBadge">RUNNING</span>
+      </div>
+
+      <!-- Progress -->
+      <div class="progress-wrap">
+        <div class="progress-meta">
+          <span id="progressLabel">Initializing…</span>
+          <span id="progressPct">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-bar" id="progressBar" style="width:0%"></div>
+        </div>
+        <div class="progress-meta">
+          <span id="progressVideos">0 / 0 videos</span>
+          <span></span>
+        </div>
+        <!-- Current video indicator -->
+        <div class="current-video hidden" id="currentVideoWrap"></div>
+      </div>
+
+      <!-- Log console -->
+      <div class="console-wrap" id="chunkerLogWrap">
+        <div class="console-bar">
+          <span class="console-dot red"></span><span class="console-dot yellow"></span><span class="console-dot green"></span>
+          <span class="console-title">stdout</span>
+          <div class="console-actions">
+            <button class="btn-console-action" onclick="toggleLog('chunkerLogBody','chunkerLogToggleBtn')" id="chunkerLogToggleBtn">▼ Hide Log</button>
+            <button class="btn-console-action" onclick="copyLog('chunkerLog')">⎘ Copy</button>
+          </div>
+        </div>
+        <div id="chunkerLogBody">
+          <pre class="console" id="chunkerLog"></pre>
+        </div>
+      </div>
+
+      <!-- Done box -->
+      <div class="done-box hidden" id="chunkerDone">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#00ff88" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="9,12 11,14 15,10"/></svg>
+        <div>
+          <p class="done-title">Chunking Complete!</p>
+          <p class="done-sub"><span id="doneSummary">—</span></p>
+          <p class="done-sub" id="doneDeletedWrap" style="display:none">🗑 <span id="doneDeleted">0</span> videos deleted (no matching transcript)</p>
+          <p class="done-sub">Output: <code id="doneOutputPath">—</code></p>
+        </div>
+      </div>
+
+      <!-- Stopped box -->
+      <div class="stopped-box hidden" id="chunkerStopped">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>
+        <div>
+          <p class="stopped-title">Chunking Stopped</p>
+          <p class="stopped-sub" id="stoppedSummary">All progress up to this point has been saved.</p>
+          <p class="stopped-sub" style="margin-top:.35rem; color: var(--text-dim);">Videos processed before stopping are marked as chunked in the database.</p>
+        </div>
+      </div>
+
+      <!-- IP Ban box -->
+      <div class="ipban-box hidden" id="chunkerIpBan">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+        <div>
+          <p class="ipban-title">YouTube IP Ban Detected</p>
+          <p class="ipban-sub">3 consecutive requests were blocked. Chunking stopped automatically.</p>
+          <p class="ipban-sub" style="margin-top:.5rem;">All videos processed before the ban are safely marked as chunked in the database.</p>
+          <p class="ipban-sub" style="margin-top:.5rem; color: var(--text-dim);">To continue: switch networks, use a VPN, or wait for the ban to expire, then re-run on the remaining videos.</p>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="btn-row" style="margin-top:1.25rem">
+        <button class="btn btn-danger" id="stopChunkerBtn" onclick="stopChunker()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+          Stop
+        </button>
+        <button class="btn btn-calc hidden" id="resetChunkerBtn" onclick="resetChunker()">Reset</button>
+        <button class="btn btn-calc" onclick="reloadVideoTable()">Refresh Video List</button>
+      </div>
+    </section>
+
+  </div><!-- /pageChunker -->
+
+  <!-- Global error banner -->
+  <div class="error-banner hidden" id="errorBanner">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span id="errorMsg">Error</span>
+    <button class="btn-close" onclick="closeError()">×</button>
+  </div>
+
+  <!-- Toast notification -->
+  <div class="toast hidden" id="toastMsg"></div>
+
+</main>
+<script src="/static/script.js"></script>
+</body>
+</html>
