@@ -49,7 +49,7 @@ class LocalBackend(StorageBackend):
         out_dir.mkdir(exist_ok=True, parents=True)
 
         import json
-        audio_path = out_dir / f"{file_label}_audio.mp3"
+        audio_path = out_dir / f"{file_label}_audio.wav"
         with open(out_dir / f"{file_label}.json", "w", encoding="utf-8") as f:
             json.dump(clean_entries(entries), f, ensure_ascii=False, indent=2)
         log(f"  ↓ {label} …")

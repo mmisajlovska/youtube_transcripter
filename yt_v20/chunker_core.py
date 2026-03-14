@@ -226,31 +226,66 @@ def chunk_transcript(raw: list, chunk_size: int) -> list:
 
 def clean_entries(entries: list) -> list:
     return [
-        {"text": e["text"], "start": e["start"], "duration": e["duration"], "end": e["true_end"]}
+        {
+            "text": re.sub(r"^>>\s*", "", e["text"]).strip(),
+            "start": e["start"],
+            "duration": e["duration"],
+            "end": e["true_end"],
+        }
         for e in entries
     ]
 
 
 # ── Audio download ────────────────────────────────────────────────────────────
 
+# Whisper requires 16 kHz mono WAV
+_WHISPER_SR = 16000
+
+
 def download_audio_chunk(video_id: str, start_sec, end_sec, out_path: Path) -> bool:
+    """
+    Download a chunk from YouTube as MP3 via yt-dlp, then immediately convert
+    it to a 16 kHz mono WAV so the file is ready for Whisper fine-tuning.
+    The caller should pass out_path with a .wav extension.
+    The intermediate .mp3 is deleted after a successful conversion.
+    """
+    from pydub import AudioSegment
+
+    # yt-dlp stem (no extension) — it appends .mp3 itself
+    stem     = out_path.with_suffix("")
+    mp3_path = out_path.with_suffix(".mp3")
+
     cmd = [
         "yt-dlp", "--no-playlist", "-x",
         "--audio-format", "mp3", "--audio-quality", "192K",
         "--download-sections", f"*{start_sec}-{end_sec}",
         "--force-keyframes-at-cuts", "--no-part",
-        "-o", str(out_path.with_suffix("")),
+        "-o", str(stem),
         f"https://www.youtube.com/watch?v={video_id}",
     ]
     result     = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    candidates = list(out_path.parent.glob(f"{out_path.with_suffix('').name}*.mp3"))
-    if candidates:
-        actual = candidates[0]
-        if actual != out_path:
-            actual.rename(out_path)
+    candidates = list(out_path.parent.glob(f"{stem.name}*.mp3"))
+
+    if not candidates:
+        log(f"  [warn] yt-dlp failed {start_sec}-{end_sec}s: {result.stderr[-300:] if result.stderr else '(none)'}")
+        return False
+
+    # Rename to the canonical .mp3 name if yt-dlp added extra suffixes
+    actual_mp3 = candidates[0]
+    if actual_mp3 != mp3_path:
+        actual_mp3.rename(mp3_path)
+
+    # Convert MP3 → 16 kHz mono WAV (Whisper-ready)
+    try:
+        audio = AudioSegment.from_mp3(str(mp3_path))
+        audio = audio.set_frame_rate(_WHISPER_SR).set_channels(1)
+        audio.export(str(out_path), format="wav")
+        mp3_path.unlink(missing_ok=True)   # remove intermediate MP3
         return True
-    log(f"  [warn] yt-dlp failed {start_sec}-{end_sec}s: {result.stderr[-300:] if result.stderr else '(none)'}")
-    return False
+    except Exception as exc:
+        log(f"  [warn] WAV conversion failed for {mp3_path.name}: {exc}")
+        mp3_path.unlink(missing_ok=True)
+        return False
 
 
 # ── Storage backend interface (Strategy pattern) ──────────────────────────────
