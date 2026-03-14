@@ -91,6 +91,9 @@ python app.py
 
 ### Step 0 — Config
 
+> ![App screenshot](readme_images/00config.png)
+
+
 The **Config** tab is the starting point. All settings are persisted to `config_user.json` and take effect immediately — no restart required.
 
 | Field | Description | Default |
@@ -114,6 +117,9 @@ The **Config** tab is the starting point. All settings are persisted to `config_
 ## Usage
 
 ### Step 1 — Collect Video IDs
+
+> ![App screenshot](readme_images/02chunk.png)
+
 
 This step queries the YouTube Data API v3 to retrieve all video IDs, titles, publish dates, and durations for a given channel, then stores them in your PostgreSQL database.
 
@@ -141,6 +147,8 @@ UCxxxxxxxxxxxxxxxxxxxxxxxx        ← raw channel ID
 
 ### Step 2 — Smart Chunker
 
+> ![App screenshot](readme_images/02chunk.png)
+
 The **Smart Chunker** fetches transcripts and audio for every video collected in Step 1 and splits them into fixed-size chunks (default: 30 seconds each).
 
 Each chunk produces:
@@ -153,6 +161,8 @@ Each chunk produces:
 |---|---|---|
 | **Full Channel** | Process every un-chunked video in the channel | Leave video selection empty |
 | **Individual Videos** | Process a specific subset of videos | Select videos from the channel table before running |
+
+> ![App screenshot](readme_images/02multi.png)
 
 #### IP-Ban Protection
 
