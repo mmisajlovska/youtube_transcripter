@@ -1,6 +1,8 @@
-# YouTube Pipeline Orchestrator
+# YouTube Pipeline Orchestrator v20
 
 A self-hosted web application for collecting YouTube video metadata, fetching transcripts, and chunking them into time-stamped segments — with either local filesystem or MinIO object storage output. Built on Flask + PostgreSQL.
+
+All output is **Whisper-ready out of the box**: audio chunks are saved as 16 kHz mono WAV files and transcript text is automatically cleaned of `>>` speaker arrows at the time of writing — no separate preprocessing step needed.
 
 ---
 
@@ -26,7 +28,7 @@ A self-hosted web application for collecting YouTube video metadata, fetching tr
 
 ## Overview
 
-YouTube Pipeline Orchestrator automates the end-to-end process of building a structured, searchable transcript dataset from any YouTube channel or set of individual videos.
+YouTube Pipeline Orchestrator automates the end-to-end process of building a structured, Whisper-ready audio dataset from any YouTube channel or set of individual videos.
 
 **Pipeline at a glance:**
 
@@ -38,8 +40,10 @@ YouTube Channel / Video IDs
         │
         ▼
  [02] Smart Chunker              ←  youtube-transcript-api + yt-dlp
+        │   ├─ strips >> speaker arrows from transcript text
+        │   └─ converts audio to 16 kHz mono WAV (Whisper-ready)
         │
-        ├──▶  Local Filesystem  (JSON + MP3 per chunk)
+        ├──▶  Local Filesystem  (JSON + WAV per chunk)
         └──▶  MinIO Bucket      (same structure, cloud-ready)
 ```
 
@@ -49,12 +53,13 @@ YouTube Channel / Video IDs
 
 Before installing Python dependencies, ensure the following are present on your system:
 
-| Requirement | Version    | Notes |
-|---|------------|---|
-| Python | 3.10+      | |
-| PostgreSQL | 13+        | Must be running and accessible |
-| ffmpeg | Any recent | Required for audio extraction |
-| yt-dlp | Latest     | Installed via pip (see below) |
+| Requirement | Version | Notes |
+|---|---|---|
+| Python | 3.10+ | |
+| PostgreSQL | 13+ | Must be running and accessible |
+| ffmpeg | Any recent | Required for audio extraction and WAV conversion |
+| yt-dlp | Latest | Installed via pip (see below) |
+| pydub | Latest | Installed via pip — used for MP3 → WAV conversion |
 
 > **ffmpeg** must be installed at the **OS level**, not via pip.
 > See [Installing ffmpeg](#installing-ffmpeg) below for platform-specific instructions.
@@ -70,7 +75,7 @@ Before installing Python dependencies, ensure the following are present on your 
 # 1. Clone or unzip the project
 cd yt_v20
 
-# 2. Install all Python dependencies in one command
+# 2. Install all Python dependencies
 pip install -r requirements.txt
 
 # 3. Start the application
@@ -86,21 +91,19 @@ python app.py
 
 ### Step 0 — Config
 
-> ![App screenshot](readme_images/00config.png)
-
 The **Config** tab is the starting point. All settings are persisted to `config_user.json` and take effect immediately — no restart required.
 
-| Field | Description | Default      |
-|---|---|--------------|
-| `PG_HOST` | PostgreSQL host | `localhost`  |
-| `PG_PORT` | PostgreSQL port | `5432`       |
-| `PG_USER` | PostgreSQL user | `postgres`   |
-| `PG_PASSWORD` | PostgreSQL password | *(empty)*    |
-| `PG_DB` | Database name | `youtube_db` |
-| `CHUNK_SIZE` | Seconds per transcript chunk | `30`         |
-| `LANGS` | Transcript language codes (comma-separated) | `mk`         |
-| `MAX_WORKERS` | Parallel chunk-download threads per video | `2`          |
-| `MAX_VIDEO_WORKERS` | Videos processed in parallel | `1`          |
+| Field | Description | Default |
+|---|---|---|
+| `PG_HOST` | PostgreSQL host | `localhost` |
+| `PG_PORT` | PostgreSQL port | `5432` |
+| `PG_USER` | PostgreSQL user | `postgres` |
+| `PG_PASSWORD` | PostgreSQL password | *(empty)* |
+| `PG_DB` | Database name | `yt_postgres` |
+| `CHUNK_SIZE` | Seconds per transcript chunk | `30` |
+| `LANGS` | Transcript language codes (comma-separated) | `mk` |
+| `MAX_WORKERS` | Parallel chunk-download threads per video | `2` |
+| `MAX_VIDEO_WORKERS` | Videos processed in parallel | `1` |
 
 **Test Connection** — Use the built-in button to verify your PostgreSQL credentials before running any pipeline step.
 
@@ -112,36 +115,37 @@ The **Config** tab is the starting point. All settings are persisted to `config_
 
 ### Step 1 — Collect Video IDs
 
-> ![App screenshot](readme_images/01api.png)
-
 This step queries the YouTube Data API v3 to retrieve all video IDs, titles, publish dates, and durations for a given channel, then stores them in your PostgreSQL database.
 
 **Inputs required:**
 
 - **YouTube Data API v3 Key** — See [Obtaining a YouTube Data API v3 Key](#obtaining-a-youtube-data-api-v3-key) below.
-- **Channel URL :
+- **Channel URL** — any of the following formats are accepted:
 
 ```
 https://www.youtube.com/@ChannelHandle
+https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxxxx
+https://www.youtube.com/c/CustomName
+https://www.youtube.com/user/Username
+UCxxxxxxxxxxxxxxxxxxxxxxxx        ← raw channel ID
+@ChannelHandle                    ← raw handle
 ```
 
 **Behavior:**
 
 - On first run, all videos in the channel are fetched and inserted.
-- On subsequent runs, only **new** videos are added — already-stored videos are skipped via incremental detection (stop-early after 25 consecutive known IDs).
+- On subsequent runs, only **new** videos are added — already-stored videos are skipped via incremental detection (stops early after 25 consecutive known IDs).
 - Duration is fetched for every new video using the `contentDetails` endpoint.
 
 ---
 
 ### Step 2 — Smart Chunker
 
-> ![App screenshot](readme_images/02chunk.png)
-
 The **Smart Chunker** fetches transcripts and audio for every video collected in Step 1 and splits them into fixed-size chunks (default: 30 seconds each).
 
 Each chunk produces:
-- A **JSON file** with timestamped transcript entries
-- An **MP3 audio file** extracted via `yt-dlp` + `ffmpeg`
+- A **JSON file** with timestamped transcript entries, cleaned of `>>` speaker arrows
+- A **WAV audio file** (16 kHz mono) extracted via `yt-dlp` + `ffmpeg` and converted to the exact format Whisper expects — no additional preprocessing required
 
 #### Channel Mode vs. Individual Video Mode
 
@@ -150,7 +154,13 @@ Each chunk produces:
 | **Full Channel** | Process every un-chunked video in the channel | Leave video selection empty |
 | **Individual Videos** | Process a specific subset of videos | Select videos from the channel table before running |
 
-> ![App screenshot](readme_images/02multi.png)
+#### IP-Ban Protection
+
+The chunker has a built-in circuit breaker. All transcript requests are serialized (one at a time) with a configurable random delay between them (`RATE_GUARD_MIN`–`RATE_GUARD_MAX` seconds, default 4–8s). If 3 consecutive requests are blocked by YouTube, the run stops automatically and all successfully processed videos are saved.
+
+#### Task Controls
+
+Each chunker run is a background task with a live log stream. You can stop a running task at any time using the **Stop** button — all chunks already completed are kept.
 
 ---
 
@@ -164,16 +174,14 @@ Output is written to a directory on your machine (default: `./youtubechunks`).
 youtubechunks/
 └── Channel_Name/
     └── Video_Title/
-        ├── 0.0-30.0s.json
-        ├── 0.0-30.0s_audio.mp3
-        ├── 30.0-60.0s.json
-        ├── 30.0-60.0s_audio.mp3
+        ├── 0_0-30_0s.json
+        ├── 0_0-30_0s_audio.wav
+        ├── 30_0-60_0s.json
+        ├── 30_0-60_0s_audio.wav
         └── ...
 ```
 
 **Best for:** Local development, single-machine setups, or when you want direct filesystem access to chunks.
-
-> ![App screenshot](readme_images/local_output.png)
 
 ---
 
@@ -185,12 +193,12 @@ Output is uploaded directly to a MinIO bucket. The same folder structure as loca
 <bucket>/
 └── Channel_Name/
     └── Video_Title/
-        ├── 0.0-30.0s.json
-        ├── 0.0-30.0s_audio.mp3
+        ├── 0_0-30_0s.json
+        ├── 0_0-30_0s_audio.wav
         └── ...
 ```
 
-**Best for:** Multi-machine setups, integration with vector databases or ML pipelines, or when you need S3-compatible object storage.
+**Best for:** Multi-machine setups, integration with ML training pipelines, or when you need S3-compatible object storage.
 
 **MinIO-specific fields:**
 
@@ -203,13 +211,13 @@ Output is uploaded directly to a MinIO bucket. The same folder structure as loca
 
 See [Setting Up MinIO](#setting-up-minio) for installation instructions.
 
-> ![App screenshot](readme_images/minio_output.png)
-
 ---
 
 ## Output Format
 
-Each `.json` chunk file contains an array of transcript entries:
+### JSON
+
+Each `.json` chunk file contains an array of transcript entries. Speaker arrows (`>>`) are stripped automatically — the text is clean and ready for training:
 
 ```json
 [
@@ -228,6 +236,17 @@ Each `.json` chunk file contains an array of transcript entries:
 ]
 ```
 
+### Audio
+
+Each `_audio.wav` file is:
+
+| Property | Value |
+|---|---|
+| Format | WAV (PCM) |
+| Sample rate | 16 kHz |
+| Channels | Mono |
+| Ready for | Whisper fine-tuning directly — no conversion needed |
+
 ---
 
 ## Project Structure
@@ -239,53 +258,51 @@ yt_v20/
 ├── config_user.json          # User overrides (auto-generated, safe to delete)
 ├── db.py                     # Centralized PostgreSQL connection pool (ThreadedConnectionPool)
 ├── chunker_core.py           # Shared chunker engine: IP-ban protection, rate guard,
-│                             #   transcript fetch, chunking logic, DB helpers, audio download
+│                             #   transcript fetch + >> cleaning, chunking logic,
+│                             #   DB helpers, audio download + WAV conversion
 ├── yt_chunked_db.py          # Local filesystem chunker (implements LocalBackend)
 ├── yt_chunked_db_minio.py    # MinIO chunker (implements MinioBackend)
-├── youtube_api_db.py         # YouTube Data API v3 collector → PostgreSQL
-├── requirements.txt          # All Python dependencies (direct + transitive)
+├── youtube_api_db.py         # YouTube Data API collector (Step 1)
+├── requirements.txt          # Python dependencies
+├── templates/
+│   └── index.html            # Single-page UI
 ├── static/
-│   ├── script.js             # Frontend logic (SSE handling, UI state)
-│   └── style.css             # Application styles
-└── templates/
-    └── index.html            # Single-page application shell
+│   ├── script.js             # Frontend logic (SSE, task management, UI state)
+│   └── style.css             # Styles
+└── youtubechunks/            # Default local output directory
 ```
 
 ---
 
 ## Obtaining a YouTube Data API v3 Key
 
->  Video tutorial https://www.youtube.com/watch?v=QY8dhl1EQfI
+1. Go to [https://console.cloud.google.com/](https://console.cloud.google.com/) and sign in with a Google account.
 
-**Step-by-step:**
+2. Accept the Terms of Service if prompted.
 
-1. **Create or sign in** to a Google account at [https://accounts.google.com](https://accounts.google.com).
-
-2. **Open Google Cloud Console** at [https://console.cloud.google.com](https://console.cloud.google.com).
-
-3. **Create a new project:**
-   - Click the project dropdown at the top of the page → **New Project**
+3. Create a new project:
+   - Click the project dropdown at the top → **New Project**
    - Give it a name (e.g., `youtube-pipeline`) and click **Create**
 
-4. **Enable the YouTube Data API v3:**
+4. Enable the YouTube Data API v3:
    - In the left sidebar, go to **APIs & Services → Library**
    - Search for `YouTube Data API v3`
    - Click the result and press **Enable**
 
-5. **Create an API key:**
+5. Create an API key:
    - Go to **APIs & Services → Credentials**
    - Click **Create Credentials → API key**
    - Copy the generated key
 
-6. **(Recommended) Restrict the key:**
+6. (Recommended) Restrict the key:
    - Click **Edit** on your new key
    - Under **API restrictions**, select **Restrict key** → choose `YouTube Data API v3`
    - Click **Save**
 
 7. **Paste the key** into the YouTube API Key field in Step 1 of the application.
 
-> ⚠️ The free quota is **10,000 units/day**. 
-> You can see the cost of quotas here https://developers.google.com/youtube/v3/getting-started
+> ⚠️ The free quota is **10,000 units/day**.
+> See quota costs at: https://developers.google.com/youtube/v3/getting-started
 
 ---
 
@@ -303,52 +320,40 @@ Open **PowerShell** and run:
 winget install Gyan.FFmpeg
 ```
 
-This installs the full GPL build (version `8.0.1-full_build` by `www.gyan.dev`) and automatically adds `ffmpeg.exe` to your system `PATH`.
+This installs ffmpeg and automatically adds it to your system `PATH`.
 
-After installation, verify it works by opening a new PowerShell window and running:
+After installation, verify it works by opening a **new** PowerShell window and running:
 
 ```powershell
 ffmpeg -version
 ```
 
-You should see output beginning with:
-```
-ffmpeg version 8.0.1-full_build-www.gyan.dev ...
-```
 > ⚠️ **Open a new terminal after installation.** WinGet updates your PATH, but the change only takes effect in newly opened terminal windows.
+
 ### Linux
 
-On Linux, FFmpeg is usually installed directly from the system package manager.
-
 ```bash
-  sudo apt update
-  sudo apt install ffmpeg
-```
-
-Check installation:
-```bash
-  ffmpeg -version
+sudo apt update
+sudo apt install ffmpeg
+ffmpeg -version
 ```
 
 ---
 
 ## Setting Up MinIO
 
-> Video tutorial https://www.youtube.com/watch?v=jlJHAI3nOFc&t=1s
+> Video tutorial: https://www.youtube.com/watch?v=jlJHAI3nOFc&t=1s
 
 MinIO is an open-source, S3-compatible object storage server. It runs as a single binary — no installer, no Docker required.
-
----
 
 ### Download
 
 #### Windows
 
-Download the MinIO server binary for Windows from the official page:
-
+Download the MinIO server binary from:
 **[https://www.min.io/download/aistor-server?platform=windows](https://www.min.io/download/aistor-server?platform=windows)**
 
-Save the downloaded `minio.exe` to a folder of your choice, for example `C:\minio\`.
+Save `minio.exe` to a folder of your choice, e.g. `C:\minio\`.
 
 #### Linux
 
@@ -364,14 +369,9 @@ sudo mv minio /usr/local/bin/
 
 #### Windows
 
-Open **PowerShell** in the folder where `minio.exe` is saved, then run:
-
 ```powershell
 .\minio.exe server C:\minio-data --console-address ":9001"
 ```
-
-- `C:\minio-data` — the folder where MinIO will store all uploaded objects. It will be created automatically if it does not exist. You can change this path to any folder you prefer.
-- `--console-address ":9001"` — makes the web management console available at `http://localhost:9001`.
 
 #### Linux
 
@@ -379,22 +379,22 @@ Open **PowerShell** in the folder where `minio.exe` is saved, then run:
 minio server ~/minio-data --console-address ":9001"
 ```
 
-Once the server starts, you will see output like:
+Once started you will see:
 
 ```
 API: http://127.0.0.1:9000
 WebUI: http://127.0.0.1:9001
 ```
 
-Leave this terminal open. MinIO runs in the foreground.
+Leave this terminal open — MinIO runs in the foreground.
 
 ---
 
-### Changing the Default Username and Password
+### Changing the Default Credentials
 
-By default, MinIO uses `minioadmin` / `minioadmin` as root credentials. **Change these before storing any real data or exposing MinIO on a network.**
+By default, MinIO uses `minioadmin` / `minioadmin`. **Change these before storing any real data or exposing MinIO on a network.**
 
-Set the credentials as environment variables **before** starting the server:
+Set environment variables **before** starting the server:
 
 #### Windows (PowerShell)
 
@@ -404,7 +404,7 @@ $env:MINIO_ROOT_PASSWORD = "your_strong_password"
 .\minio.exe server C:\minio-data --console-address ":9001"
 ```
 
-#### Linux (bash)
+#### Linux
 
 ```bash
 export MINIO_ROOT_USER=your_username
@@ -427,12 +427,9 @@ After changing credentials, update the **Access Key** and **Secret Key** fields 
 | Root User | `minioadmin` |
 | Root Password | `minioadmin` |
 
-### Verify
-
-Open [http://localhost:9001](http://localhost:9001) in your browser. Log in with your credentials. If the MinIO console loads and you can see the **Buckets** section, the server is ready.
+Open [http://localhost:9001](http://localhost:9001) to verify — if the MinIO console loads and you can see the **Buckets** section, the server is ready.
 
 ---
-
 ### Channel Examples
 | Channel Name                          | Rating |
 |---------------------------------------|--------|
@@ -483,7 +480,6 @@ Open [http://localhost:9001](http://localhost:9001) in your browser. Log in with
 | nustarz                               | 1      |
 | Bigorski Manastir                     | 1      |
 
-
 ## Troubleshooting
 
 **`ffmpeg not found` error**
@@ -501,8 +497,14 @@ The chunker has a built-in IP-ban circuit breaker. If 3 consecutive transcript r
 **`yt-dlp` fails to download audio**
 Run `yt-dlp --update` to ensure you have the latest version. YouTube frequently changes its internal API, and yt-dlp releases fixes regularly.
 
+**WAV conversion fails / `pydub` error**
+Ensure `pydub` is installed (`pip install pydub`) and that `ffmpeg` is available on your PATH. pydub uses ffmpeg internally to decode MP3 before converting to WAV — if ffmpeg is missing, pydub will fail.
+
 **MinIO server exits immediately on Windows**
-Ensure you are setting `MINIO_ROOT_PASSWORD` to at least 8 characters. A password that is too short will cause MinIO to exit with an error at startup.
+Ensure `MINIO_ROOT_PASSWORD` is at least 8 characters. A password that is too short will cause MinIO to exit with an error at startup.
+
+**Channel URL not resolving**
+The app supports handles (`@name`), channel IDs (`UCxxx`), `/c/`, `/user/`, and full URLs. If resolution fails via page scraping, it falls back to the YouTube API automatically. Make sure your API key is valid and has the YouTube Data API v3 enabled.
 
 ---
 
