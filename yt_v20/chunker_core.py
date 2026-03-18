@@ -236,6 +236,12 @@ def clean_entries(entries: list) -> list:
     ]
 
 
+def write_chunk_txt(path: Path, cleaned: list):
+    """Write transcript text only, one entry per line."""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(e["text"] for e in cleaned))
+
+
 # ── Audio download ────────────────────────────────────────────────────────────
 
 # Whisper requires 16 kHz mono WAV

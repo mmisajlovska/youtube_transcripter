@@ -20,7 +20,7 @@ from db import init_pool
 from chunker_core import (
     RATE_GUARD_MIN, RATE_GUARD_MAX,
     StorageBackend,
-    clean_entries, download_audio_chunk, safe_name,
+    clean_entries, write_chunk_txt, download_audio_chunk, safe_name,
     get_channel_name, get_videos_for_channel, get_videos_by_ids,
     process_video, reset_ban_state, is_ip_banned,
     log,
@@ -50,8 +50,10 @@ class LocalBackend(StorageBackend):
 
         import json
         audio_path = out_dir / f"{file_label}_audio.wav"
+        cleaned = clean_entries(entries)
         with open(out_dir / f"{file_label}.json", "w", encoding="utf-8") as f:
-            json.dump(clean_entries(entries), f, ensure_ascii=False, indent=2)
+            json.dump(cleaned, f, ensure_ascii=False, indent=2)
+        write_chunk_txt(out_dir / f"{file_label}.txt", cleaned)
         log(f"  ↓ {label} …")
         ok = download_audio_chunk(video_id, c_start, c_end, audio_path)
         return label, len(entries), ok

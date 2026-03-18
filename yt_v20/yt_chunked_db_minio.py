@@ -27,7 +27,7 @@ from db import init_pool
 from chunker_core import (
     RATE_GUARD_MIN, RATE_GUARD_MAX,
     StorageBackend,
-    clean_entries, download_audio_chunk, safe_name,
+    clean_entries, write_chunk_txt, download_audio_chunk, safe_name,
     get_channel_name, get_videos_for_channel, get_videos_by_ids,
     process_video, reset_ban_state, is_ip_banned,
     log,
@@ -64,6 +64,8 @@ def _upload_folder(client: Minio, bucket: str, prefix: str, folder: Path):
     for f in sorted(folder.rglob("*")):
         if not f.is_file():
             continue
+        if f.suffix not in (".wav", ".json", ".txt"):   # Fix 3: never upload mp3 or temp files
+            continue
         obj_name = prefix + f.relative_to(folder).as_posix()
         try:
             client.fput_object(bucket, obj_name, str(f))
@@ -89,22 +91,31 @@ class MinioBackend(StorageBackend):
 
     def save_chunk(self, video_id, label, file_label, c_start, c_end, entries,
                    channel_context, video_context) -> tuple:
-        tmp_dir = self._video_tmp(channel_context, video_context)
-        tmp_dir.mkdir(parents=True, exist_ok=True)
+        # Fix 1: each chunk gets its own isolated subdir so concurrent threads
+        # never see each other's in-progress files during upload.
+        chunk_dir = self._video_tmp(channel_context, video_context) / file_label
+        chunk_dir.mkdir(parents=True, exist_ok=True)
 
-        audio_path = tmp_dir / f"{file_label}_audio.wav"
-        with open(tmp_dir / f"{file_label}.json", "w", encoding="utf-8") as f:
-            json.dump(clean_entries(entries), f, ensure_ascii=False, indent=2)
+        audio_path = chunk_dir / f"{file_label}_audio.wav"
+        cleaned = clean_entries(entries)
+        with open(chunk_dir / f"{file_label}.json", "w", encoding="utf-8") as f:
+            json.dump(cleaned, f, ensure_ascii=False, indent=2)
+        write_chunk_txt(chunk_dir / f"{file_label}.txt", cleaned)
         log(f"  ↓ {label} …")
         ok = download_audio_chunk(video_id, c_start, c_end, audio_path)
 
-        # Upload immediately after each chunk is written
+        # Fix 2: purge any stray .mp3 files yt-dlp may have left with an
+        # unexpected name (e.g. when download "fails" but still wrote bytes).
+        for stale in chunk_dir.glob("*.mp3"):
+            stale.unlink(missing_ok=True)
+
+        # Upload only this chunk's isolated directory
         prefix = f"{channel_context}/{video_context}/"
-        uploaded, upload_failed = _upload_folder(self.client, self.bucket, prefix, tmp_dir)
+        uploaded, upload_failed = _upload_folder(self.client, self.bucket, prefix, chunk_dir)
 
         # Clean up temp files that were uploaded successfully
         if upload_failed == 0:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+            shutil.rmtree(chunk_dir, ignore_errors=True)
 
         return label, len(entries), ok and upload_failed == 0
 
