@@ -43,8 +43,8 @@ YouTube Channel / Video IDs
         │   ├─ strips >> speaker arrows from transcript text
         │   └─ converts audio to 16 kHz mono WAV (Whisper-ready)
         │
-        ├──▶  Local Filesystem  (JSON + WAV per chunk)
-        └──▶  MinIO Bucket      (same structure, cloud-ready)
+        ├──▶  Local Filesystem  (JSON + TXT + WAV per chunk)
+        └──▶  MinIO Bucket      (same structure, cloud-ready)     (same structure, cloud-ready)
 ```
 
 ---
@@ -153,8 +153,8 @@ The **Smart Chunker** fetches transcripts and audio for every video collected in
 
 Each chunk produces:
 - A **JSON file** with timestamped transcript entries, cleaned of `>>` speaker arrows
+- A **TXT file** with plain transcript text only — one line per entry, no timestamps
 - A **WAV audio file** (16 kHz mono) extracted via `yt-dlp` + `ffmpeg` and converted to the exact format Whisper expects — no additional preprocessing required
-
 #### Channel Mode vs. Individual Video Mode
 
 | Mode | When to use | How to trigger |
@@ -185,8 +185,10 @@ youtubechunks/
 └── Channel_Name/
     └── Video_Title/
         ├── 0_0-30_0s.json
+        ├── 0_0-30_0s.txt
         ├── 0_0-30_0s_audio.wav
         ├── 30_0-60_0s.json
+        ├── 30_0-60_0s.txt
         ├── 30_0-60_0s_audio.wav
         └── ...
 ```
@@ -204,6 +206,7 @@ Output is uploaded directly to a MinIO bucket. The same folder structure as loca
 └── Channel_Name/
     └── Video_Title/
         ├── 0_0-30_0s.json
+        ├── 0_0-30_0s.txt
         ├── 0_0-30_0s_audio.wav
         └── ...
 ```
@@ -246,6 +249,14 @@ Each `.json` chunk file contains an array of transcript entries. Speaker arrows 
 ]
 ```
 
+### TXT
+
+Each `.txt` chunk file contains the transcript text only — one line per entry, no timestamps or metadata. Speaker arrows (`>>`) are stripped, matching the JSON:
+```
+Здраво на сите денес
+ќе одиме на прошетка во
+```
+
 ### Audio
 
 Each `_audio.wav` file is:
@@ -269,7 +280,8 @@ yt_v20/
 ├── db.py                     # Centralized PostgreSQL connection pool (ThreadedConnectionPool)
 ├── chunker_core.py           # Shared chunker engine: IP-ban protection, rate guard,
 │                             #   transcript fetch + >> cleaning, chunking logic,
-│                             #   DB helpers, audio download + WAV conversion
+│                             #   DB helpers, audio download + WAV conversion,
+│                             #   write_chunk_txt (shared .txt writer)
 ├── yt_chunked_db.py          # Local filesystem chunker (implements LocalBackend)
 ├── yt_chunked_db_minio.py    # MinIO chunker (implements MinioBackend)
 ├── youtube_api_db.py         # YouTube Data API collector (Step 1)
