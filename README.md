@@ -1,4 +1,4 @@
-# YouTube Pipeline Orchestrator v20
+# NashZbor - YouTube Pipeline Orchestrator v20 
 
 A self-hosted web application for collecting YouTube video metadata, fetching transcripts, and chunking them into time-stamped segments — with either local filesystem or MinIO object storage output. Built on Flask + PostgreSQL.
 
