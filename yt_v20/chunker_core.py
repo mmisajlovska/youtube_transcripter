@@ -22,6 +22,7 @@ import json
 import random
 import re
 import subprocess
+import tempfile
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -248,24 +249,20 @@ def write_chunk_txt(path: Path, cleaned: list):
 _WHISPER_SR = 16000
 
 
-def download_audio_chunk(video_id: str, start_sec, end_sec, out_path: Path) -> bool:
+def download_full_audio(video_id: str, out_path: Path) -> bool:
     """
-    Download a chunk from YouTube as MP3 via yt-dlp, then immediately convert
-    it to a 16 kHz mono WAV so the file is ready for Whisper fine-tuning.
-    The caller should pass out_path with a .wav extension.
-    The intermediate .mp3 is deleted after a successful conversion.
+    Download the FULL audio track for a video ONCE via yt-dlp (no
+    --download-sections), convert to 16kHz mono WAV. Chunks are sliced
+    locally from this file afterward — zero extra YouTube requests per chunk.
     """
     from pydub import AudioSegment
 
-    # yt-dlp stem (no extension) — it appends .mp3 itself
     stem     = out_path.with_suffix("")
     mp3_path = out_path.with_suffix(".mp3")
 
     cmd = [
         "yt-dlp", "--no-playlist", "-x",
         "--audio-format", "mp3", "--audio-quality", "192K",
-        "--download-sections", f"*{start_sec}-{end_sec}",
-        "--force-keyframes-at-cuts", "--no-part",
         "-o", str(stem),
         f"https://www.youtube.com/watch?v={video_id}",
     ]
@@ -273,26 +270,42 @@ def download_audio_chunk(video_id: str, start_sec, end_sec, out_path: Path) -> b
     candidates = list(out_path.parent.glob(f"{stem.name}*.mp3"))
 
     if not candidates:
-        log(f"  [warn] yt-dlp failed {start_sec}-{end_sec}s: {result.stderr[-300:] if result.stderr else '(none)'}")
+        stderr_tail = result.stderr[-500:] if result.stderr else ""
+        log(f"  [warn] full-audio download failed for {video_id}: {stderr_tail[-300:] if stderr_tail else '(none)'}")
+        if _is_ip_ban_exc(Exception(stderr_tail)):
+            _record_ban_hit(video_id)
         return False
 
-    # Rename to the canonical .mp3 name if yt-dlp added extra suffixes
     actual_mp3 = candidates[0]
     if actual_mp3 != mp3_path:
         actual_mp3.rename(mp3_path)
 
-    # Convert MP3 → 16 kHz mono WAV (Whisper-ready)
     try:
         audio = AudioSegment.from_mp3(str(mp3_path))
         audio = audio.set_frame_rate(_WHISPER_SR).set_channels(1)
         audio.export(str(out_path), format="wav")
-        mp3_path.unlink(missing_ok=True)   # remove intermediate MP3
+        mp3_path.unlink(missing_ok=True)
         return True
     except Exception as exc:
         log(f"  [warn] WAV conversion failed for {mp3_path.name}: {exc}")
         mp3_path.unlink(missing_ok=True)
         return False
 
+
+def slice_audio_chunk(full_audio_path: Path, start_sec, end_sec, out_path: Path) -> bool:
+    """Cut one chunk out of the already-downloaded full WAV. Pure local ffmpeg — no network."""
+    cmd = [
+        "ffmpeg", "-y", "-nostdin",
+        "-i", str(full_audio_path),
+        "-ss", str(start_sec), "-to", str(end_sec),
+        "-ar", str(_WHISPER_SR), "-ac", "1",
+        str(out_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if not out_path.exists():
+        log(f"  [warn] ffmpeg slice failed {start_sec}-{end_sec}s: {result.stderr[-300:] if result.stderr else '(none)'}")
+        return False
+    return True
 
 # ── Storage backend interface (Strategy pattern) ──────────────────────────────
 
@@ -313,6 +326,7 @@ class StorageBackend(ABC):
         entries: list,
         channel_context: str,
         video_context: str,
+        full_audio_path: str
     ) -> tuple[str, int, bool]:
         """
         Persist one chunk (JSON + audio).
@@ -354,10 +368,19 @@ def process_video(
     # Print the title so the Flask SSE bridge can emit current_video events
     print(f"Processing: {display}", flush=True)
 
+    full_audio_path = Path(tempfile.gettempdir()) / "yt_full_audio" / f"{video_id}.wav"
+    full_audio_path.parent.mkdir(parents=True, exist_ok=True)
+
     try:
+        log(f"  fetching video subtitles (1 request) …")
         raw    = fetch_transcript_single_pass(video_id, langs)
         chunks = chunk_transcript(raw, chunk_size)
         log(f"  {len(raw)} entries → {len(chunks)} chunks\n")
+
+        log(f"  downloading full audio (1 request) …")
+        if not download_full_audio(video_id, full_audio_path):
+            log(f"\n  Audio download failed for {video_id} — skipping\n")
+            return False
 
         results = {}
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -370,6 +393,7 @@ def process_video(
                     s, e, ents,
                     channel_context,
                     video_safe,
+                    full_audio_path,
                 ): (s, e)
                 for s, e, ents in chunks
             }
@@ -387,7 +411,7 @@ def process_video(
         return True
 
     except (NoTranscriptFound, TranscriptsDisabled, VideoUnavailable) as exc:
-        log(f"\n  No transcript for {video_id} ({exc}) — deleting from DB\n")
+        log(f"\n  No transcript for {video_id} ({exc}) - deleting from DB\n")
         backend.cleanup_video(channel_context, video_safe)
         db_delete_video(video_id)
         return False
@@ -398,3 +422,6 @@ def process_video(
         else:
             log(f"\n  Error processing {video_id}: {exc}\n")
         return False
+
+    finally:
+        full_audio_path.unlink(missing_ok=True)

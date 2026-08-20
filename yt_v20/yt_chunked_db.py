@@ -20,7 +20,7 @@ from db import init_pool
 from chunker_core import (
     RATE_GUARD_MIN, RATE_GUARD_MAX,
     StorageBackend,
-    clean_entries, write_chunk_txt, download_audio_chunk, safe_name,
+    clean_entries, write_chunk_txt, slice_audio_chunk, safe_name,
     get_channel_name, get_videos_for_channel, get_videos_by_ids,
     process_video, reset_ban_state, is_ip_banned,
     log,
@@ -44,18 +44,17 @@ class LocalBackend(StorageBackend):
         self.base_dir = base_dir
 
     def save_chunk(self, video_id, label, file_label, c_start, c_end, entries,
-                   channel_context, video_context) -> tuple:
+                   channel_context, video_context, full_audio_path) -> tuple:
         out_dir = self.base_dir / video_context
         out_dir.mkdir(exist_ok=True, parents=True)
-
         import json
         audio_path = out_dir / f"{file_label}_audio.wav"
         cleaned = clean_entries(entries)
         with open(out_dir / f"{file_label}.json", "w", encoding="utf-8") as f:
             json.dump(cleaned, f, ensure_ascii=False, indent=2)
         write_chunk_txt(out_dir / f"{file_label}.txt", cleaned)
-        log(f"  ↓ {label} …")
-        ok = download_audio_chunk(video_id, c_start, c_end, audio_path)
+        log(f" slicing {label} …")
+        ok = slice_audio_chunk(full_audio_path, c_start, c_end, audio_path)
         return label, len(entries), ok
 
     def cleanup_video(self, channel_context, video_context):
